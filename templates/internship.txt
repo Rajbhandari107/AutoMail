@@ -1,0 +1,10 @@
+Subject: Application for {{role}} at {{company}}
+
+Hi {{name}},
+
+I am writing to express my interest in the {{role}} position at {{company}}.
+
+I have attached my resume for your consideration.
+
+Best regards,
+Buddham Rajbhandari
