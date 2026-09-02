@@ -216,3 +216,27 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+# Environment variables
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+
+# Virtual environment
+venv/
+.venv/
+
+# Personal data
+data/*
+attachments/*
+!data/.gitkeep
+!attachments/.gitkeep
+
+# Test/cache
+.pytest_cache/
+.coverage
+
+# Google OAuth
+credentials.json
+token.json
