@@ -240,3 +240,6 @@ attachments/*
 # Google OAuth
 credentials.json
 token.json
+
+# Local database
+data/*.db
