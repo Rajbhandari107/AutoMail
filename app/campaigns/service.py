@@ -28,7 +28,8 @@ class CampaignService:
         contact_email = contact.email
         recipient = recipient_override or contact_email
 
-        # Check SQLite for previous successful sends.
+        # Do not resend a contact that has already
+        # successfully been sent in a previous campaign.
         if (
             self.contact_already_sent
             and self.contact_already_sent(contact_email)
@@ -48,7 +49,7 @@ class CampaignService:
                 "recipient": recipient
             }
 
-        # Dry-run mode.
+        # Safe testing mode.
         if dry_run:
             print(
                 f"[DRY RUN] Would send email to {recipient}"
@@ -146,6 +147,7 @@ class CampaignService:
     ):
         results = []
 
+        # A dry run does not change campaign state.
         if dry_run:
             self.status = "DRY_RUN"
 
@@ -161,9 +163,7 @@ class CampaignService:
 
         try:
 
-            for index, contact in enumerate(
-                contacts
-            ):
+            for index, contact in enumerate(contacts):
 
                 print(
                     f"\nProcessing: {contact.name}"

@@ -66,9 +66,50 @@ class CampaignRepository:
 
         return recipient_id
 
+    def get_campaign(self, campaign_id):
+        connection = self.get_connection()
+        cursor = connection.cursor()
+
+        cursor.execute(
+            """
+            SELECT
+                id,
+                name,
+                status,
+                created_at,
+                started_at,
+                completed_at
+            FROM campaigns
+            WHERE id = ?
+            """,
+            (campaign_id,)
+        )
+
+        campaign = cursor.fetchone()
+
+        connection.close()
+
+        return campaign
+
     def mark_started(self, campaign_id):
         connection = self.get_connection()
         cursor = connection.cursor()
+
+        campaign = self.get_campaign(campaign_id)
+
+        if campaign is None:
+            connection.close()
+            raise ValueError(
+                f"Campaign #{campaign_id} does not exist."
+            )
+
+        if campaign["status"] != "DRAFT":
+            connection.close()
+            raise ValueError(
+                f"Campaign #{campaign_id} cannot be started "
+                f"because its status is "
+                f"{campaign['status']}."
+            )
 
         started_at = datetime.now().isoformat(
             timespec="seconds"
@@ -94,6 +135,22 @@ class CampaignRepository:
         connection = self.get_connection()
         cursor = connection.cursor()
 
+        campaign = self.get_campaign(campaign_id)
+
+        if campaign is None:
+            connection.close()
+            raise ValueError(
+                f"Campaign #{campaign_id} does not exist."
+            )
+
+        if campaign["status"] != "RUNNING":
+            connection.close()
+            raise ValueError(
+                f"Campaign #{campaign_id} cannot be completed "
+                f"because its status is "
+                f"{campaign['status']}."
+            )
+
         completed_at = datetime.now().isoformat(
             timespec="seconds"
         )
@@ -118,6 +175,22 @@ class CampaignRepository:
         connection = self.get_connection()
         cursor = connection.cursor()
 
+        campaign = self.get_campaign(campaign_id)
+
+        if campaign is None:
+            connection.close()
+            raise ValueError(
+                f"Campaign #{campaign_id} does not exist."
+            )
+
+        if campaign["status"] != "RUNNING":
+            connection.close()
+            raise ValueError(
+                f"Campaign #{campaign_id} cannot be marked "
+                f"failed because its status is "
+                f"{campaign['status']}."
+            )
+
         cursor.execute(
             """
             UPDATE campaigns
@@ -140,8 +213,45 @@ class CampaignRepository:
         message_id="",
         error=""
     ):
+        allowed_statuses = {
+            "SENT",
+            "FAILED",
+            "SKIPPED"
+        }
+
+        if status not in allowed_statuses:
+            raise ValueError(
+                f"Invalid recipient status: {status}"
+            )
+
         connection = self.get_connection()
         cursor = connection.cursor()
+
+        cursor.execute(
+            """
+            SELECT
+                id,
+                status
+            FROM campaign_recipients
+            WHERE id = ?
+            """,
+            (recipient_id,)
+        )
+
+        recipient = cursor.fetchone()
+
+        if recipient is None:
+            connection.close()
+            raise ValueError(
+                f"Recipient #{recipient_id} does not exist."
+            )
+
+        if recipient["status"] != "PENDING":
+            connection.close()
+            raise ValueError(
+                f"Recipient #{recipient_id} cannot change "
+                f"from {recipient['status']} to {status}."
+            )
 
         sent_at = None
 
@@ -171,6 +281,27 @@ class CampaignRepository:
 
         connection.commit()
         connection.close()
+
+    def was_contact_sent(self, email):
+        connection = self.get_connection()
+        cursor = connection.cursor()
+
+        cursor.execute(
+            """
+            SELECT 1
+            FROM campaign_recipients
+            WHERE LOWER(email) = LOWER(?)
+              AND status = 'SENT'
+            LIMIT 1
+            """,
+            (email,)
+        )
+
+        result = cursor.fetchone()
+
+        connection.close()
+
+        return result is not None
 
     def get_all(self):
         connection = self.get_connection()
@@ -261,24 +392,3 @@ class CampaignRepository:
         )
 
         return counts
-
-    def was_contact_sent(self, email):
-        connection = self.get_connection()
-        cursor = connection.cursor()
-
-        cursor.execute(
-            """
-            SELECT 1
-            FROM campaign_recipients
-            WHERE LOWER(email) = LOWER(?)
-              AND status = 'SENT'
-            LIMIT 1
-            """,
-            (email,)
-        )
-
-        result = cursor.fetchone()
-
-        connection.close()
-
-        return result is not None
