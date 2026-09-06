@@ -4,6 +4,8 @@ import sys
 from app.auth import get_gmail_credentials
 from app.config import EMAIL_ADDRESS
 from app.contacts.manager import load_contacts
+from app.contacts.importer import import_contacts
+from app.contacts.repository import ContactRepository
 from app.email_sender import send_email
 from app.templates.renderer import render_template
 from app.campaigns.service import CampaignService
@@ -57,14 +59,12 @@ def build_application():
 
     initialize_database()
 
-    campaign_repository = (
-        CampaignRepository(
-            get_connection
-        )
+    campaign_repository = CampaignRepository(
+        get_connection
     )
 
-    contacts = load_contacts(
-        CONTACTS_PATH
+    contact_repository = ContactRepository(
+        get_connection
     )
 
     template = load_template()
@@ -92,9 +92,7 @@ def build_application():
         nonlocal credentials
 
         if credentials is None:
-            credentials = (
-                get_gmail_credentials()
-            )
+            credentials = get_gmail_credentials()
 
         return send_email(
             credentials=credentials,
@@ -119,9 +117,39 @@ def build_application():
 
     return (
         campaign_repository,
+        contact_repository,
         campaign_manager,
-        contacts,
         render_for_contact
+    )
+
+
+def import_contacts_command():
+
+    initialize_database()
+
+    contact_repository = ContactRepository(
+        get_connection
+    )
+
+    result = import_contacts(
+        CONTACTS_PATH,
+        contact_repository
+    )
+
+    print(
+        "\nContact import complete"
+    )
+
+    print(
+        f"Total: {result['total']}"
+    )
+
+    print(
+        f"Imported: {result['imported']}"
+    )
+
+    print(
+        f"Skipped: {result['skipped']}"
     )
 
 
@@ -129,10 +157,28 @@ def create_campaign():
 
     (
         repository,
+        contact_repository,
         manager,
-        contacts,
         _
     ) = build_application()
+
+    contacts = (
+        contact_repository
+        .get_contacts_as_objects()
+    )
+
+    if not contacts:
+
+        print(
+            "No contacts found in SQLite."
+        )
+
+        print(
+            "Run: "
+            "python -m app.main import-contacts"
+        )
+
+        return
 
     campaign_id, recipient_ids = (
         manager.create_campaign(
@@ -161,8 +207,8 @@ def run_campaign(
 
     (
         repository,
-        manager,
         _,
+        manager,
         render_for_contact
     ) = build_application()
 
@@ -291,6 +337,39 @@ def show_history():
         )
 
 
+def show_contacts():
+
+    initialize_database()
+
+    repository = ContactRepository(
+        get_connection
+    )
+
+    contacts = repository.get_all()
+
+    if not contacts:
+
+        print(
+            "No contacts found."
+        )
+
+        return
+
+    print(
+        "\nContacts"
+    )
+
+    for contact in contacts:
+
+        print(
+            f"#{contact['id']} | "
+            f"{contact['name']} | "
+            f"{contact['email']} | "
+            f"{contact['company']} | "
+            f"{contact['role']}"
+        )
+
+
 def show_help():
 
     print(
@@ -300,7 +379,7 @@ AutoMail CLI
 Commands:
 
     python -m app.main create
-        Create a new DRAFT campaign.
+        Create a new DRAFT campaign from SQLite contacts.
 
     python -m app.main dry-run <campaign_id>
         Safely test a campaign without sending emails.
@@ -311,6 +390,12 @@ Commands:
     python -m app.main history
         Show campaign history.
 
+    python -m app.main import-contacts
+        Import contacts from CSV into SQLite.
+
+    python -m app.main contacts
+        Show contacts stored in SQLite.
+
 Examples:
 
     python -m app.main create
@@ -320,6 +405,10 @@ Examples:
     python -m app.main send 20
 
     python -m app.main history
+
+    python -m app.main import-contacts
+
+    python -m app.main contacts
 """
     )
 
@@ -383,6 +472,14 @@ def main():
     elif command == "history":
 
         show_history()
+
+    elif command == "import-contacts":
+
+        import_contacts_command()
+
+    elif command == "contacts":
+
+        show_contacts()
 
     elif command in (
         "help",
