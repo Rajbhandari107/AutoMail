@@ -43,19 +43,24 @@ LOG_PATH = os.path.join(
 
 
 def load_template():
+
     with open(
         TEMPLATE_PATH,
         "r",
         encoding="utf-8"
     ) as file:
+
         return file.read()
 
 
 def build_application():
+
     initialize_database()
 
-    campaign_repository = CampaignRepository(
-        get_connection
+    campaign_repository = (
+        CampaignRepository(
+            get_connection
+        )
     )
 
     contacts = load_contacts(
@@ -65,6 +70,7 @@ def build_application():
     template = load_template()
 
     def render_for_contact(contact):
+
         return render_template(
             template,
             contact
@@ -82,10 +88,13 @@ def build_application():
         body,
         attachment_path=None
     ):
+
         nonlocal credentials
 
         if credentials is None:
-            credentials = get_gmail_credentials()
+            credentials = (
+                get_gmail_credentials()
+            )
 
         return send_email(
             credentials=credentials,
@@ -117,6 +126,7 @@ def build_application():
 
 
 def create_campaign():
+
     (
         repository,
         manager,
@@ -144,31 +154,48 @@ def create_campaign():
     )
 
 
-def run_campaign(campaign_id, dry_run):
+def run_campaign(
+    campaign_id,
+    dry_run
+):
+
     (
         repository,
         manager,
-        contacts,
+        _,
         render_for_contact
     ) = build_application()
 
-    recipients = repository.get_recipients(
+    campaign = repository.get_campaign(
         campaign_id
     )
 
-    if not recipients:
+    if campaign is None:
+
         print(
             f"Campaign #{campaign_id} not found."
         )
+
+        return
+
+    if campaign["status"] != "DRAFT":
+
+        print(
+            f"Campaign #{campaign_id} is "
+            f"{campaign['status']}, not DRAFT."
+        )
+
         return
 
     if dry_run:
+
         print(
             f"Starting DRY RUN for campaign "
             f"#{campaign_id}"
         )
 
     else:
+
         print(
             f"Starting REAL SEND for campaign "
             f"#{campaign_id}"
@@ -178,19 +205,14 @@ def run_campaign(campaign_id, dry_run):
             "WARNING: Emails will actually be sent."
         )
 
-    recipient_ids = [
-        recipient["id"]
-        for recipient in recipients
-    ]
-
     results = manager.start_campaign(
         campaign_id=campaign_id,
-        contacts=contacts,
-        recipient_ids=recipient_ids,
         template_renderer=render_for_contact,
         attachment_path=RESUME_PATH,
         recipient_override=(
-            EMAIL_ADDRESS if dry_run else None
+            EMAIL_ADDRESS
+            if dry_run
+            else None
         ),
         dry_run=dry_run,
         delay_seconds=2
@@ -201,6 +223,7 @@ def run_campaign(campaign_id, dry_run):
     )
 
     for result in results:
+
         print(
             f"{result['recipient']} → "
             f"{result['status']}"
@@ -236,6 +259,7 @@ def run_campaign(campaign_id, dry_run):
 
 
 def show_history():
+
     (
         repository,
         _,
@@ -246,9 +270,11 @@ def show_history():
     campaigns = repository.get_all()
 
     if not campaigns:
+
         print(
             "No campaigns found."
         )
+
         return
 
     print(
@@ -266,6 +292,7 @@ def show_history():
 
 
 def show_help():
+
     print(
         """
 AutoMail CLI
@@ -288,9 +315,9 @@ Examples:
 
     python -m app.main create
 
-    python -m app.main dry-run 16
+    python -m app.main dry-run 20
 
-    python -m app.main send 16
+    python -m app.main send 20
 
     python -m app.main history
 """
@@ -300,24 +327,32 @@ Examples:
 def main():
 
     if len(sys.argv) < 2:
+
         show_help()
+
         return
 
     command = sys.argv[1].lower()
 
     if command == "create":
+
         create_campaign()
 
     elif command == "dry-run":
 
         if len(sys.argv) < 3:
+
             print(
                 "Usage: "
-                "python -m app.main dry-run <campaign_id>"
+                "python -m app.main "
+                "dry-run <campaign_id>"
             )
+
             return
 
-        campaign_id = int(sys.argv[2])
+        campaign_id = int(
+            sys.argv[2]
+        )
 
         run_campaign(
             campaign_id=campaign_id,
@@ -327,13 +362,18 @@ def main():
     elif command == "send":
 
         if len(sys.argv) < 3:
+
             print(
                 "Usage: "
-                "python -m app.main send <campaign_id>"
+                "python -m app.main "
+                "send <campaign_id>"
             )
+
             return
 
-        campaign_id = int(sys.argv[2])
+        campaign_id = int(
+            sys.argv[2]
+        )
 
         run_campaign(
             campaign_id=campaign_id,
@@ -341,6 +381,7 @@ def main():
         )
 
     elif command == "history":
+
         show_history()
 
     elif command in (
@@ -348,9 +389,11 @@ def main():
         "-h",
         "--help"
     ):
+
         show_help()
 
     else:
+
         print(
             f"Unknown command: {command}"
         )
