@@ -392,3 +392,67 @@ class CampaignRepository:
         )
 
         return counts
+
+    def remove_recipient(
+        self,
+        campaign_id,
+        recipient_id
+    ):
+        connection = self.get_connection()
+        cursor = connection.cursor()
+
+        try:
+            campaign = self.get_campaign(
+                campaign_id
+            )
+
+            if campaign is None:
+                raise ValueError(
+                    f"Campaign #{campaign_id} does not exist."
+                )
+
+            if campaign["status"] != "DRAFT":
+                raise ValueError(
+                    f"Campaign #{campaign_id} cannot be edited "
+                    f"because its status is "
+                    f"{campaign['status']}."
+                )
+
+            cursor.execute(
+                """
+                SELECT id
+                FROM campaign_recipients
+                WHERE id = ?
+                AND campaign_id = ?
+                """,
+                (
+                    recipient_id,
+                    campaign_id
+                )
+            )
+
+            recipient = cursor.fetchone()
+
+            if recipient is None:
+                raise ValueError(
+                    f"Recipient #{recipient_id} "
+                    f"does not belong to campaign "
+                    f"#{campaign_id}."
+                )
+
+            cursor.execute(
+                """
+                DELETE FROM campaign_recipients
+                WHERE id = ?
+                AND campaign_id = ?
+                """,
+                (
+                    recipient_id,
+                    campaign_id
+                )
+            )
+
+            connection.commit()
+
+        finally:
+            connection.close()

@@ -624,3 +624,39 @@ def dry_run_campaign(
             )
         )
     )
+
+@router.delete(
+    "/campaigns/{campaign_id}/recipients/{recipient_id}"
+)
+def remove_campaign_recipient(
+    campaign_id: int,
+    recipient_id: int
+):
+
+    try:
+
+        campaign_repository.remove_recipient(
+            campaign_id,
+            recipient_id
+        )
+
+    except ValueError as error:
+
+        message = str(error)
+
+        if "does not exist" in message:
+            raise HTTPException(
+                status_code=404,
+                detail=message
+            )
+
+        raise HTTPException(
+            status_code=400,
+            detail=message
+        )
+
+    return {
+        "message": "Recipient removed from campaign.",
+        "campaign_id": campaign_id,
+        "recipient_id": recipient_id
+    }
