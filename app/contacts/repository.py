@@ -132,6 +132,89 @@ class ContactRepository:
 
             connection.close()
 
+    def update(
+        self,
+        contact_id,
+        contact
+    ):
+
+        connection = self.get_connection()
+        cursor = connection.cursor()
+
+        try:
+
+            cursor.execute(
+                """
+                UPDATE contacts
+                SET
+                    name = ?,
+                    email = ?,
+                    company = ?,
+                    role = ?
+                WHERE id = ?
+                """,
+                (
+                    contact.name,
+                    contact.email,
+                    contact.company,
+                    contact.role,
+                    contact_id
+                )
+            )
+
+            if cursor.rowcount == 0:
+
+                raise ValueError(
+                    f"Contact #{contact_id} does not exist."
+                )
+
+            connection.commit()
+
+        finally:
+
+            connection.close()
+
+    def delete(self, contact_id):
+
+        connection = self.get_connection()
+        cursor = connection.cursor()
+
+        try:
+
+            cursor.execute(
+                """
+                SELECT 1
+                FROM contacts
+                WHERE id = ?
+                """,
+                (contact_id,)
+            )
+
+            contact = cursor.fetchone()
+
+            if contact is None:
+
+                raise ValueError(
+                    f"Contact #{contact_id} does not exist."
+                )
+
+            # Campaign recipients are snapshots,
+            # so deleting the original contact does
+            # not destroy campaign history.
+            cursor.execute(
+                """
+                DELETE FROM contacts
+                WHERE id = ?
+                """,
+                (contact_id,)
+            )
+
+            connection.commit()
+
+        finally:
+
+            connection.close()
+
     def get_contacts_as_objects(self):
 
         rows = self.get_all()
