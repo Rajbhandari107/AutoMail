@@ -6,7 +6,13 @@ class CampaignRepository:
     def __init__(self, get_connection):
         self.get_connection = get_connection
 
-    def create(self, name):
+    def create(
+        self,
+        name,
+        template="internship.txt",
+        attachment_path=None,
+        delay_seconds=2
+    ):
         connection = self.get_connection()
         cursor = connection.cursor()
 
@@ -19,11 +25,21 @@ class CampaignRepository:
             INSERT INTO campaigns (
                 name,
                 status,
+                template,
+                attachment_path,
+                delay_seconds,
                 created_at
             )
-            VALUES (?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?)
             """,
-            (name, "DRAFT", created_at)
+            (
+                name,
+                "DRAFT",
+                template,
+                attachment_path,
+                delay_seconds,
+                created_at
+            )
         )
 
         campaign_id = cursor.lastrowid
@@ -76,6 +92,9 @@ class CampaignRepository:
                 id,
                 name,
                 status,
+                template,
+                attachment_path,
+                delay_seconds,
                 created_at,
                 started_at,
                 completed_at
@@ -304,6 +323,7 @@ class CampaignRepository:
         return result is not None
 
     def get_all(self):
+
         connection = self.get_connection()
         cursor = connection.cursor()
 
@@ -313,6 +333,9 @@ class CampaignRepository:
                 id,
                 name,
                 status,
+                template,
+                attachment_path,
+                delay_seconds,
                 created_at,
                 started_at,
                 completed_at

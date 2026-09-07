@@ -65,6 +65,9 @@ class CampaignResponse(BaseModel):
     id: int
     name: str
     status: str
+    template: str | None = None
+    attachment_path: str | None = None
+    delay_seconds: int | None = None
     created_at: str
     started_at: str | None = None
     completed_at: str | None = None
@@ -595,7 +598,6 @@ def dry_run_campaign(
 
         results = manager.start_campaign(
             campaign_id=campaign_id,
-            template_renderer=get_template_renderer(),
             dry_run=True,
             delay_seconds=0
         )

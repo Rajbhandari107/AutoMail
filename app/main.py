@@ -253,15 +253,12 @@ def run_campaign(
 
     results = manager.start_campaign(
         campaign_id=campaign_id,
-        template_renderer=render_for_contact,
-        attachment_path=RESUME_PATH,
         recipient_override=(
             EMAIL_ADDRESS
             if dry_run
             else None
         ),
-        dry_run=dry_run,
-        delay_seconds=2
+        dry_run=dry_run
     )
 
     print(

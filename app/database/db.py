@@ -4,9 +4,7 @@ import sqlite3
 
 BASE_DIR = os.path.dirname(
     os.path.dirname(
-        os.path.dirname(
-            os.path.abspath(__file__)
-        )
+        os.path.dirname(os.path.abspath(__file__))
     )
 )
 
@@ -37,6 +35,10 @@ def initialize_database():
 
     connection = get_connection()
     cursor = connection.cursor()
+
+    # --------------------------------------------
+    # Base tables
+    # --------------------------------------------
 
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS campaigns (
@@ -76,6 +78,40 @@ def initialize_database():
                 REFERENCES campaigns(id)
         )
     """)
+
+    # --------------------------------------------
+    # Campaign configuration migration
+    # --------------------------------------------
+
+    cursor.execute(
+        "PRAGMA table_info(campaigns)"
+    )
+
+    existing_columns = {
+        row["name"]
+        for row in cursor.fetchall()
+    }
+
+    if "template" not in existing_columns:
+
+        cursor.execute("""
+            ALTER TABLE campaigns
+            ADD COLUMN template TEXT
+        """)
+
+    if "attachment_path" not in existing_columns:
+
+        cursor.execute("""
+            ALTER TABLE campaigns
+            ADD COLUMN attachment_path TEXT
+        """)
+
+    if "delay_seconds" not in existing_columns:
+
+        cursor.execute("""
+            ALTER TABLE campaigns
+            ADD COLUMN delay_seconds INTEGER
+        """)
 
     connection.commit()
     connection.close()
