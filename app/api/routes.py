@@ -51,6 +51,7 @@ TEMPLATE_PATH = os.path.join(
 
 class CampaignCreateRequest(BaseModel):
     name: str
+    contact_ids: list[int]
 
 
 class CampaignCreateResponse(BaseModel):
@@ -237,63 +238,79 @@ def get_contact(
 
 
 @router.post(
-    "/contacts",
-    response_model=ContactResponse,
-    status_code=201
+    "/campaigns",
+    response_model=CampaignCreateResponse
 )
-def create_contact(
-    request: ContactCreateRequest
+def create_campaign(
+    request: CampaignCreateRequest
 ):
 
     name = request.name.strip()
-    email = request.email.strip().lower()
-    company = request.company.strip()
-    role = request.role.strip()
 
-    if not name or not email or not company or not role:
+    if not name:
 
         raise HTTPException(
             status_code=400,
-            detail="All contact fields are required."
+            detail="Campaign name cannot be empty."
         )
 
-    existing = contact_repository.get_by_email(
-        email
-    )
-
-    if existing:
+    if not request.contact_ids:
 
         raise HTTPException(
-            status_code=409,
-            detail="A contact with this email already exists."
+            status_code=400,
+            detail="At least one contact must be selected."
         )
 
-    contact = Contact(
-        name=name,
-        email=email,
-        company=company,
-        role=role
-    )
+    selected_contacts = []
+
+    for contact_id in request.contact_ids:
+
+        contact = contact_repository.get_by_id(
+            contact_id
+        )
+
+        if contact is None:
+
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    f"Contact #{contact_id} "
+                    f"not found."
+                )
+            )
+
+        selected_contacts.append(
+            Contact(
+                name=contact["name"],
+                email=contact["email"],
+                company=contact["company"],
+                role=contact["role"]
+            )
+        )
+
+    manager = build_campaign_manager()
 
     try:
 
-        contact_id = contact_repository.create(
-            contact
+        campaign_id, recipient_ids = (
+            manager.create_campaign(
+                name=name,
+                contacts=selected_contacts
+            )
         )
 
-    except Exception as error:
+    except ValueError as error:
 
         raise HTTPException(
             status_code=400,
             detail=str(error)
         )
 
-    created_contact = contact_repository.get_by_id(
-        contact_id
-    )
-
-    return ContactResponse(
-        **dict(created_contact)
+    return CampaignCreateResponse(
+        campaign_id=campaign_id,
+        name=name,
+        status="DRAFT",
+        recipient_count=len(recipient_ids)
     )
 
 @router.put(

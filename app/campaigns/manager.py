@@ -7,7 +7,11 @@ class CampaignManager:
         self.repository = repository
         self.campaign_service = campaign_service
 
-    def create_campaign(self, name, contacts):
+    def create_campaign(
+        self,
+        name,
+        contacts
+    ):
         if not name or not name.strip():
             raise ValueError(
                 "Campaign name cannot be empty."
