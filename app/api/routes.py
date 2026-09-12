@@ -1,22 +1,47 @@
 import os
 
-from fastapi import APIRouter, HTTPException
+from fastapi import FastAPI, APIRouter, HTTPException
 from pydantic import BaseModel
 
-from app.database.db import get_connection, initialize_database
+from fastapi.middleware.cors import CORSMiddleware
 
+from app.database.db import get_connection, initialize_database
 from app.contacts.manager import Contact
 from app.contacts.repository import ContactRepository
-
 from app.campaigns.repository import CampaignRepository
 from app.campaigns.manager import CampaignManager
 from app.campaigns.service import CampaignService
 
 
+
+# --------------------------------------------------
+# Application
+# --------------------------------------------------
+
 router = APIRouter()
 
 initialize_database()
 
+app = FastAPI(
+    title="AutoMail API",
+    description="Backend API for AutoMail",
+    version="1.0.0"
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# --------------------------------------------------
+# Repositories
+# --------------------------------------------------
 
 campaign_repository = CampaignRepository(
     get_connection
@@ -26,6 +51,10 @@ contact_repository = ContactRepository(
     get_connection
 )
 
+
+# --------------------------------------------------
+# Paths
+# --------------------------------------------------
 
 BASE_DIR = os.path.dirname(
     os.path.dirname(
@@ -138,7 +167,6 @@ class ContactResponse(BaseModel):
 def build_campaign_manager():
 
     def email_sender(**kwargs):
-
         raise RuntimeError(
             "Real email sending is not available "
             "through this API yet."
@@ -723,3 +751,10 @@ def dry_run_campaign(
             )
         )
     )
+
+
+# --------------------------------------------------
+# Register router with FastAPI
+# --------------------------------------------------
+
+app.include_router(router)
