@@ -12,8 +12,6 @@ from app.campaigns.repository import CampaignRepository
 from app.campaigns.manager import CampaignManager
 from app.campaigns.service import CampaignService
 
-from app.templates.renderer import render_template
-
 
 router = APIRouter()
 
@@ -37,12 +35,6 @@ BASE_DIR = os.path.dirname(
     )
 )
 
-TEMPLATE_PATH = os.path.join(
-    BASE_DIR,
-    "templates",
-    "internship.txt"
-)
-
 
 # --------------------------------------------------
 # Request / Response Models
@@ -52,6 +44,9 @@ TEMPLATE_PATH = os.path.join(
 class CampaignCreateRequest(BaseModel):
     name: str
     contact_ids: list[int]
+    template: str = "internship.txt"
+    attachment_path: str | None = "attachments/Resume.pdf"
+    delay_seconds: int = 2
 
 
 class CampaignCreateResponse(BaseModel):
@@ -118,11 +113,13 @@ class ContactCreateRequest(BaseModel):
     company: str
     role: str
 
+
 class ContactUpdateRequest(BaseModel):
     name: str
     email: str
     company: str
     role: str
+
 
 class ContactResponse(BaseModel):
     id: int
@@ -136,26 +133,6 @@ class ContactResponse(BaseModel):
 # --------------------------------------------------
 # Helpers
 # --------------------------------------------------
-
-
-def get_template_renderer():
-
-    with open(
-        TEMPLATE_PATH,
-        "r",
-        encoding="utf-8"
-    ) as file:
-
-        template = file.read()
-
-    def render_for_contact(contact):
-
-        return render_template(
-            template,
-            contact
-        )
-
-    return render_for_contact
 
 
 def build_campaign_manager():
@@ -241,80 +218,70 @@ def get_contact(
 
 
 @router.post(
-    "/campaigns",
-    response_model=CampaignCreateResponse
+    "/contacts",
+    response_model=ContactResponse,
+    status_code=201
 )
-def create_campaign(
-    request: CampaignCreateRequest
+def create_contact(
+    request: ContactCreateRequest
 ):
 
     name = request.name.strip()
+    email = request.email.strip().lower()
+    company = request.company.strip()
+    role = request.role.strip()
 
-    if not name:
-
-        raise HTTPException(
-            status_code=400,
-            detail="Campaign name cannot be empty."
-        )
-
-    if not request.contact_ids:
+    if not name or not email or not company or not role:
 
         raise HTTPException(
             status_code=400,
-            detail="At least one contact must be selected."
+            detail="All contact fields are required."
         )
 
-    selected_contacts = []
+    existing = contact_repository.get_by_email(
+        email
+    )
 
-    for contact_id in request.contact_ids:
+    if existing:
 
-        contact = contact_repository.get_by_id(
-            contact_id
-        )
-
-        if contact is None:
-
-            raise HTTPException(
-                status_code=404,
-                detail=(
-                    f"Contact #{contact_id} "
-                    f"not found."
-                )
-            )
-
-        selected_contacts.append(
-            Contact(
-                name=contact["name"],
-                email=contact["email"],
-                company=contact["company"],
-                role=contact["role"]
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "A contact with this email "
+                "already exists."
             )
         )
 
-    manager = build_campaign_manager()
+    contact = Contact(
+        name=name,
+        email=email,
+        company=company,
+        role=role
+    )
 
     try:
 
-        campaign_id, recipient_ids = (
-            manager.create_campaign(
-                name=name,
-                contacts=selected_contacts
-            )
+        contact_id = contact_repository.create(
+            contact
         )
 
-    except ValueError as error:
+    except Exception as error:
 
         raise HTTPException(
             status_code=400,
             detail=str(error)
         )
 
-    return CampaignCreateResponse(
-        campaign_id=campaign_id,
-        name=name,
-        status="DRAFT",
-        recipient_count=len(recipient_ids)
+    created_contact = (
+        contact_repository.get_by_id(
+            contact_id
+        )
     )
+
+    return ContactResponse(
+        **dict(created_contact)
+    )
+
 
 @router.put(
     "/contacts/{contact_id}",
@@ -349,7 +316,9 @@ def update_contact(
         )
 
     existing_email = (
-        contact_repository.get_by_email(email)
+        contact_repository.get_by_email(
+            email
+        )
     )
 
     if (
@@ -432,6 +401,8 @@ def delete_contact(
         "message": "Contact deleted successfully.",
         "contact_id": contact_id
     }
+
+
 # --------------------------------------------------
 # Campaigns
 # --------------------------------------------------
@@ -454,28 +425,109 @@ def create_campaign(
             detail="Campaign name cannot be empty."
         )
 
-    # Contacts now come from SQLite,
-    # not contacts.csv.
-    contacts = (
-        contact_repository
-        .get_contacts_as_objects()
-    )
-
-    if not contacts:
+    if not request.contact_ids:
 
         raise HTTPException(
             status_code=400,
-            detail="No contacts available."
+            detail=(
+                "At least one contact "
+                "must be selected."
+            )
         )
+
+    if request.delay_seconds < 0:
+
+        raise HTTPException(
+            status_code=400,
+            detail="Delay cannot be negative."
+        )
+
+    # --------------------------------------------
+    # Validate template
+    # --------------------------------------------
+
+    template_name = os.path.basename(
+        request.template
+    )
+
+    if template_name != request.template:
+
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid template name."
+        )
+
+    template_path = os.path.join(
+        BASE_DIR,
+        "templates",
+        template_name
+    )
+
+    if not os.path.isfile(template_path):
+
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"Template not found: "
+                f"{template_name}"
+            )
+        )
+
+    # --------------------------------------------
+    # Load selected contacts
+    # --------------------------------------------
+
+    selected_contacts = []
+
+    for contact_id in request.contact_ids:
+
+        contact = contact_repository.get_by_id(
+            contact_id
+        )
+
+        if contact is None:
+
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    f"Contact #{contact_id} "
+                    f"not found."
+                )
+            )
+
+        selected_contacts.append(
+            Contact(
+                name=contact["name"],
+                email=contact["email"],
+                company=contact["company"],
+                role=contact["role"]
+            )
+        )
+
+    # --------------------------------------------
+    # Create campaign
+    # --------------------------------------------
 
     manager = build_campaign_manager()
 
-    campaign_id, recipient_ids = (
-        manager.create_campaign(
-            name=name,
-            contacts=contacts
+    try:
+
+        campaign_id, recipient_ids = (
+            manager.create_campaign(
+                name=name,
+                contacts=selected_contacts,
+                template=template_name,
+                attachment_path=request.attachment_path,
+                delay_seconds=request.delay_seconds
+            )
         )
-    )
+
+    except ValueError as error:
+
+        raise HTTPException(
+            status_code=400,
+            detail=str(error)
+        )
 
     return CampaignCreateResponse(
         campaign_id=campaign_id,
@@ -544,6 +596,51 @@ def get_campaign(
             **counts
         )
     )
+
+
+# --------------------------------------------------
+# Campaign Recipient Management
+# --------------------------------------------------
+
+
+@router.delete(
+    "/campaigns/{campaign_id}/recipients/{recipient_id}"
+)
+def remove_campaign_recipient(
+    campaign_id: int,
+    recipient_id: int
+):
+
+    try:
+
+        campaign_repository.remove_recipient(
+            campaign_id,
+            recipient_id
+        )
+
+    except ValueError as error:
+
+        message = str(error)
+
+        if "does not exist" in message:
+
+            raise HTTPException(
+                status_code=404,
+                detail=message
+            )
+
+        raise HTTPException(
+            status_code=400,
+            detail=message
+        )
+
+    return {
+        "message": (
+            "Recipient removed from campaign."
+        ),
+        "campaign_id": campaign_id,
+        "recipient_id": recipient_id
+    }
 
 
 # --------------------------------------------------
@@ -626,39 +723,3 @@ def dry_run_campaign(
             )
         )
     )
-
-@router.delete(
-    "/campaigns/{campaign_id}/recipients/{recipient_id}"
-)
-def remove_campaign_recipient(
-    campaign_id: int,
-    recipient_id: int
-):
-
-    try:
-
-        campaign_repository.remove_recipient(
-            campaign_id,
-            recipient_id
-        )
-
-    except ValueError as error:
-
-        message = str(error)
-
-        if "does not exist" in message:
-            raise HTTPException(
-                status_code=404,
-                detail=message
-            )
-
-        raise HTTPException(
-            status_code=400,
-            detail=message
-        )
-
-    return {
-        "message": "Recipient removed from campaign.",
-        "campaign_id": campaign_id,
-        "recipient_id": recipient_id
-    }
