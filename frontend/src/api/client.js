@@ -19,7 +19,7 @@ async function request(endpoint, options = {}) {
         message = errorData.detail;
       }
     } catch {
-      // Keep the default error.
+      // Keep default error message.
     }
 
     throw new Error(message);
@@ -29,18 +29,18 @@ async function request(endpoint, options = {}) {
 }
 
 
-// ------------------------------
+// ----------------------------------------
 // Health
-// ------------------------------
+// ----------------------------------------
 
 export function getHealth() {
   return request("/health");
 }
 
 
-// ------------------------------
+// ----------------------------------------
 // Contacts
-// ------------------------------
+// ----------------------------------------
 
 export function getContacts() {
   return request("/contacts");
@@ -67,9 +67,9 @@ export function deleteContact(contactId) {
 }
 
 
-// ------------------------------
+// ----------------------------------------
 // Campaigns
-// ------------------------------
+// ----------------------------------------
 
 export function getCampaigns() {
   return request("/campaigns");
