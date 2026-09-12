@@ -6,6 +6,8 @@ import {
   createCampaign,
 } from "../api/client";
 
+import CampaignDetails from "./CampaignDetails";
+
 
 const EMPTY_FORM = {
   name: "",
@@ -15,45 +17,60 @@ const EMPTY_FORM = {
 
 
 function Campaigns() {
+
   const [campaigns, setCampaigns] = useState([]);
 
   const [contacts, setContacts] = useState([]);
 
-  const [selectedContacts, setSelectedContacts] = useState([]);
+  const [selectedContacts, setSelectedContacts] =
+    useState([]);
 
   const [loading, setLoading] = useState(true);
 
   const [creating, setCreating] = useState(false);
 
-  const [showBuilder, setShowBuilder] = useState(false);
+  const [showBuilder, setShowBuilder] =
+    useState(false);
 
-  const [form, setForm] = useState(EMPTY_FORM);
+  const [selectedCampaignId, setSelectedCampaignId] =
+    useState(null);
+
+  const [form, setForm] =
+    useState(EMPTY_FORM);
 
   const [error, setError] = useState("");
 
 
   // ----------------------------------------
-  // Load campaigns + contacts
+  // Load data
   // ----------------------------------------
 
   async function loadData() {
+
     try {
+
       setLoading(true);
       setError("");
 
-      const [campaignData, contactData] =
-        await Promise.all([
-          getCampaigns(),
-          getContacts(),
-        ]);
+      const [
+        campaignData,
+        contactData,
+      ] = await Promise.all([
+        getCampaigns(),
+        getContacts(),
+      ]);
 
       setCampaigns(campaignData);
       setContacts(contactData);
 
     } catch (error) {
+
       setError(error.message);
+
     } finally {
+
       setLoading(false);
+
     }
   }
 
@@ -64,39 +81,43 @@ function Campaigns() {
 
 
   // ----------------------------------------
-  // Open builder
+  // Builder
   // ----------------------------------------
 
   function openBuilder() {
+
     setForm(EMPTY_FORM);
+
     setSelectedContacts([]);
+
     setError("");
+
     setShowBuilder(true);
   }
 
 
-  // ----------------------------------------
-  // Close builder
-  // ----------------------------------------
-
   function closeBuilder() {
+
     if (creating) {
       return;
     }
 
     setShowBuilder(false);
+
     setForm(EMPTY_FORM);
+
     setSelectedContacts([]);
+
     setError("");
   }
 
 
-  // ----------------------------------------
-  // Form changes
-  // ----------------------------------------
-
   function handleChange(event) {
-    const { name, value } = event.target;
+
+    const {
+      name,
+      value,
+    } = event.target;
 
     setForm((current) => ({
       ...current,
@@ -105,35 +126,42 @@ function Campaigns() {
   }
 
 
-  // ----------------------------------------
-  // Select contact
-  // ----------------------------------------
-
   function toggleContact(contactId) {
+
     setSelectedContacts((current) => {
+
       if (current.includes(contactId)) {
+
         return current.filter(
           (id) => id !== contactId
         );
+
       }
 
-      return [...current, contactId];
+      return [
+        ...current,
+        contactId,
+      ];
     });
   }
 
 
-  // ----------------------------------------
-  // Select all
-  // ----------------------------------------
-
   function toggleSelectAll() {
-    if (selectedContacts.length === contacts.length) {
+
+    if (
+      selectedContacts.length ===
+      contacts.length
+    ) {
+
       setSelectedContacts([]);
+
       return;
     }
 
     setSelectedContacts(
-      contacts.map((contact) => contact.id)
+      contacts.map(
+        (contact) => contact.id
+      )
     );
   }
 
@@ -143,53 +171,102 @@ function Campaigns() {
   // ----------------------------------------
 
   async function handleSubmit(event) {
+
     event.preventDefault();
 
     setError("");
 
-    const campaignName = form.name.trim();
+    const campaignName =
+      form.name.trim();
+
 
     if (!campaignName) {
-      setError("Campaign name is required.");
+
+      setError(
+        "Campaign name is required."
+      );
+
       return;
     }
 
+
     if (selectedContacts.length === 0) {
+
       setError(
         "Select at least one contact."
       );
+
       return;
     }
 
-    const delay = Number(form.delay_seconds);
 
-    if (!Number.isInteger(delay) || delay < 0) {
+    const delay =
+      Number(form.delay_seconds);
+
+
+    if (
+      !Number.isInteger(delay) ||
+      delay < 0
+    ) {
+
       setError(
         "Delay must be a non-negative whole number."
       );
+
       return;
     }
 
 
     try {
+
       setCreating(true);
 
-      await createCampaign({
-        name: campaignName,
-        contact_ids: selectedContacts,
-        template: form.template,
-        delay_seconds: delay,
-      });
+      const created =
+        await createCampaign({
+          name: campaignName,
+          contact_ids: selectedContacts,
+          template: form.template,
+          delay_seconds: delay,
+        });
+
 
       await loadData();
 
       closeBuilder();
 
+      setSelectedCampaignId(
+        created.campaign_id
+      );
+
     } catch (error) {
+
       setError(error.message);
+
     } finally {
+
       setCreating(false);
+
     }
+  }
+
+
+  // ----------------------------------------
+  // Campaign details
+  // ----------------------------------------
+
+  if (selectedCampaignId !== null) {
+
+    return (
+      <CampaignDetails
+        campaignId={
+          selectedCampaignId
+        }
+        onBack={() => {
+          setSelectedCampaignId(null);
+          loadData();
+        }}
+      />
+    );
   }
 
 
@@ -202,26 +279,30 @@ function Campaigns() {
 
       <section className="panel">
 
-        {/* Header */}
-
         <div className="panel-header">
 
           <div>
-            <h2>Campaigns</h2>
+
+            <h2>
+              Campaigns
+            </h2>
 
             <p>
               Create and manage your email outreach
             </p>
+
           </div>
 
 
           {!showBuilder && (
+
             <button
               className="primary-button"
               onClick={openBuilder}
             >
               + New Campaign
             </button>
+
           )}
 
         </div>
@@ -230,20 +311,24 @@ function Campaigns() {
         {/* Error */}
 
         {error && (
+
           <div className="error-message">
             {error}
           </div>
+
         )}
 
 
-        {/* Campaign Builder */}
+        {/* Builder */}
 
         {showBuilder && (
+
           <div className="campaign-builder">
 
             <div className="builder-heading">
 
               <div>
+
                 <h3>
                   Create Campaign
                 </h3>
@@ -252,14 +337,15 @@ function Campaigns() {
                   Configure your campaign and
                   select the recipients.
                 </p>
+
               </div>
 
             </div>
 
 
-            <form onSubmit={handleSubmit}>
-
-              {/* Campaign settings */}
+            <form
+              onSubmit={handleSubmit}
+            >
 
               <div className="builder-section">
 
@@ -272,12 +358,11 @@ function Campaigns() {
 
                   <div className="form-group">
 
-                    <label htmlFor="campaign-name">
+                    <label>
                       Campaign Name
                     </label>
 
                     <input
-                      id="campaign-name"
                       name="name"
                       type="text"
                       placeholder="Internship Outreach"
@@ -291,20 +376,21 @@ function Campaigns() {
 
                   <div className="form-group">
 
-                    <label htmlFor="campaign-template">
+                    <label>
                       Email Template
                     </label>
 
                     <select
-                      id="campaign-template"
                       name="template"
                       value={form.template}
                       onChange={handleChange}
                       disabled={creating}
                     >
+
                       <option value="internship.txt">
                         internship.txt
                       </option>
+
                     </select>
 
                   </div>
@@ -312,19 +398,20 @@ function Campaigns() {
 
                   <div className="form-group">
 
-                    <label htmlFor="campaign-delay">
+                    <label>
                       Delay Between Emails
                     </label>
 
                     <div className="input-with-unit">
 
                       <input
-                        id="campaign-delay"
                         name="delay_seconds"
                         type="number"
                         min="0"
                         step="1"
-                        value={form.delay_seconds}
+                        value={
+                          form.delay_seconds
+                        }
                         onChange={handleChange}
                         disabled={creating}
                       />
@@ -342,13 +429,14 @@ function Campaigns() {
               </div>
 
 
-              {/* Contacts */}
+              {/* Recipients */}
 
               <div className="builder-section">
 
                 <div className="recipient-header">
 
                   <div>
+
                     <h4>
                       Recipients
                     </h4>
@@ -357,28 +445,36 @@ function Campaigns() {
                       Select the contacts who should
                       receive this campaign.
                     </p>
+
                   </div>
 
 
                   <div className="recipient-controls">
 
                     <span className="selection-count">
-                      {selectedContacts.length} selected
+                      {
+                        selectedContacts.length
+                      }{" "}
+                      selected
                     </span>
 
                     <button
                       type="button"
                       className="select-all-button"
-                      onClick={toggleSelectAll}
+                      onClick={
+                        toggleSelectAll
+                      }
                       disabled={
                         creating ||
                         contacts.length === 0
                       }
                     >
-                      {selectedContacts.length ===
-                      contacts.length
-                        ? "Clear All"
-                        : "Select All"}
+                      {
+                        selectedContacts.length ===
+                        contacts.length
+                          ? "Clear All"
+                          : "Select All"
+                      }
                     </button>
 
                   </div>
@@ -386,19 +482,10 @@ function Campaigns() {
                 </div>
 
 
-                {contacts.length === 0 ? (
+                <div className="recipient-list">
 
-                  <div className="empty-recipient-state">
-                    <p>
-                      No contacts available.
-                    </p>
-                  </div>
-
-                ) : (
-
-                  <div className="recipient-list">
-
-                    {contacts.map((contact) => {
+                  {contacts.map(
+                    (contact) => {
 
                       const selected =
                         selectedContacts.includes(
@@ -407,6 +494,7 @@ function Campaigns() {
 
 
                       return (
+
                         <label
                           key={contact.id}
                           className={`recipient-card ${
@@ -429,7 +517,11 @@ function Campaigns() {
 
 
                           <div className="recipient-check">
-                            {selected ? "✓" : ""}
+                            {
+                              selected
+                                ? "✓"
+                                : ""
+                            }
                           </div>
 
 
@@ -459,13 +551,13 @@ function Campaigns() {
                           </div>
 
                         </label>
+
                       );
 
-                    })}
+                    }
+                  )}
 
-                  </div>
-
-                )}
+                </div>
 
               </div>
 
@@ -481,7 +573,9 @@ function Campaigns() {
                   </span>
 
                   <strong>
-                    {selectedContacts.length}
+                    {
+                      selectedContacts.length
+                    }
                   </strong>
 
                 </div>
@@ -515,14 +609,14 @@ function Campaigns() {
               </div>
 
 
-              {/* Actions */}
-
               <div className="builder-actions">
 
                 <button
                   type="button"
                   className="secondary-button"
-                  onClick={closeBuilder}
+                  onClick={
+                    closeBuilder
+                  }
                   disabled={creating}
                 >
                   Cancel
@@ -534,9 +628,11 @@ function Campaigns() {
                   className="primary-button"
                   disabled={creating}
                 >
-                  {creating
-                    ? "Creating..."
-                    : "Create Draft"}
+                  {
+                    creating
+                      ? "Creating..."
+                      : "Create Draft"
+                  }
                 </button>
 
               </div>
@@ -544,12 +640,14 @@ function Campaigns() {
             </form>
 
           </div>
+
         )}
 
 
-        {/* Campaign table */}
+        {/* Campaign list */}
 
         {!showBuilder && (
+
           <>
             {loading ? (
 
@@ -590,6 +688,7 @@ function Campaigns() {
                       <th>STATUS</th>
                       <th>TEMPLATE</th>
                       <th>DELAY</th>
+                      <th>ACTION</th>
                     </tr>
 
                   </thead>
@@ -597,41 +696,69 @@ function Campaigns() {
 
                   <tbody>
 
-                    {campaigns.map((campaign) => (
+                    {campaigns.map(
+                      (campaign) => (
 
-                      <tr key={campaign.id}>
+                        <tr
+                          key={campaign.id}
+                        >
 
-                        <td>
-                          #{campaign.id}
-                        </td>
+                          <td>
+                            #{campaign.id}
+                          </td>
 
-                        <td>
-                          <strong>
-                            {campaign.name}
-                          </strong>
-                        </td>
+                          <td>
+                            <strong>
+                              {campaign.name}
+                            </strong>
+                          </td>
 
-                        <td>
+                          <td>
 
-                          <span
-                            className={`badge ${campaign.status.toLowerCase()}`}
-                          >
-                            {campaign.status}
-                          </span>
+                            <span
+                              className={`badge ${campaign.status.toLowerCase()}`}
+                            >
+                              {
+                                campaign.status
+                              }
+                            </span>
 
-                        </td>
+                          </td>
 
-                        <td>
-                          {campaign.template || "—"}
-                        </td>
+                          <td>
+                            {
+                              campaign.template ||
+                              "—"
+                            }
+                          </td>
 
-                        <td>
-                          {campaign.delay_seconds ?? "—"} sec
-                        </td>
+                          <td>
+                            {
+                              campaign.delay_seconds ??
+                              "—"
+                            }{" "}
+                            sec
+                          </td>
 
-                      </tr>
+                          <td>
 
-                    ))}
+                            <button
+                              className="action-button"
+                              onClick={() =>
+                                setSelectedCampaignId(
+                                  campaign.id
+                                )
+                              }
+                            >
+                              View
+                            </button>
+
+                          </td>
+
+                        </tr>
+
+                      )
+                    )}
 
                   </tbody>
 
@@ -642,6 +769,7 @@ function Campaigns() {
             )}
 
           </>
+
         )}
 
       </section>

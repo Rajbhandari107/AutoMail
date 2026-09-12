@@ -19,7 +19,7 @@ async function request(endpoint, options = {}) {
         message = errorData.detail;
       }
     } catch {
-      // Keep default error message.
+      // Keep default error.
     }
 
     throw new Error(message);
