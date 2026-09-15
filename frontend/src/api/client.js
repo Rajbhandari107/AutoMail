@@ -92,6 +92,12 @@ export function dryRunCampaign(campaignId) {
   });
 }
 
+export function sendCampaign(campaignId) {
+  return request(`/campaigns/${campaignId}/send`, {
+    method: "POST",
+  });
+}
+
 export function removeCampaignRecipient(
   campaignId,
   recipientId

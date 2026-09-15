@@ -910,10 +910,124 @@ def remove_campaign_recipient(
 # Campaign dry run
 # ==================================================
 
-@router.post(
-    "/campaigns/{campaign_id}/dry-run",
-    response_model=DryRunResponse,
-)
+@router.post("/campaigns/{campaign_id}/send")
+def send_campaign(campaign_id: int):
+    repository = get_campaign_repository()
+
+    # ----------------------------------------
+    # 1. Campaign must exist
+    # ----------------------------------------
+
+    campaign = repository.get_campaign(campaign_id)
+
+    if campaign is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Campaign not found.",
+        )
+
+    # ----------------------------------------
+    # 2. Campaign must still be DRAFT
+    # ----------------------------------------
+
+    if campaign["status"] != "DRAFT":
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Campaign #{campaign_id} cannot be sent "
+                f"because its status is "
+                f"{campaign['status']}."
+            ),
+        )
+
+    # ----------------------------------------
+    # 3. Campaign must have recipients
+    # ----------------------------------------
+
+    recipients = repository.get_recipients(
+        campaign_id
+    )
+
+    if not recipients:
+        raise HTTPException(
+            status_code=400,
+            detail="Campaign has no recipients.",
+        )
+
+    # ----------------------------------------
+    # 4. Only PENDING recipients can be sent
+    # ----------------------------------------
+
+    pending_recipients = [
+        recipient
+        for recipient in recipients
+        if recipient["status"] == "PENDING"
+    ]
+
+    if not pending_recipients:
+        raise HTTPException(
+            status_code=400,
+            detail="Campaign has no pending recipients.",
+        )
+
+    # ----------------------------------------
+    # 5. Validate template
+    # ----------------------------------------
+
+    template_name = campaign["template"]
+
+    if not template_name:
+        raise HTTPException(
+            status_code=400,
+            detail="Campaign does not have a template.",
+        )
+
+    safe_template_name = os.path.basename(
+        template_name
+    )
+
+    if safe_template_name != template_name:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid template name.",
+        )
+
+    template_path = os.path.join(
+        TEMPLATES_DIR,
+        safe_template_name
+    )
+
+    if not os.path.isfile(template_path):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Template not found: "
+                f"{safe_template_name}"
+            ),
+        )
+
+    # ----------------------------------------
+    # 6. Validate attachment
+    # ----------------------------------------
+
+    attachment_path = campaign["attachment_path"]
+
+    if attachment_path:
+        validate_attachment_path(
+            attachment_path
+        )
+
+    # ----------------------------------------
+    # 7. Real sending is intentionally disabled
+    # ----------------------------------------
+
+    raise HTTPException(
+        status_code=501,
+        detail=(
+            "Campaign passed all safety checks, "
+            "but real email sending is not enabled yet."
+        ),
+    )
 def dry_run_campaign(
     campaign_id: int,
 ):

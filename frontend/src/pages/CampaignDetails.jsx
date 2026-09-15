@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import {
   getCampaign,
   dryRunCampaign,
+  sendCampaign,
   removeCampaignRecipient,
 } from "../api/client";
 
@@ -22,6 +23,8 @@ function CampaignDetails({
   const [dryRunResult, setDryRunResult] = useState(null);
 
   const [error, setError] = useState("");
+
+  const [sendConfirmation, setSendConfirmation] = useState(false);
 
 
   // ----------------------------------------
@@ -72,6 +75,35 @@ function CampaignDetails({
       setError(error.message);
     } finally {
       setDryRunning(false);
+    }
+  }
+
+
+  // ----------------------------------------
+  // Send campaign
+  // ----------------------------------------
+
+  function handleSendCampaign() {
+    setError("");
+
+    setSendConfirmation(true);
+  }
+
+
+  function handleCancelSend() {
+    setSendConfirmation(false);
+  }
+
+
+  async function handleConfirmSend() {
+    try {
+      setSendConfirmation(false);
+      setError("");
+
+      await sendCampaign(campaignId);
+
+    } catch (error) {
+      setError(error.message);
     }
   }
 
@@ -195,6 +227,64 @@ function CampaignDetails({
       )}
 
 
+      {/* Send confirmation */}
+
+      {sendConfirmation && (
+        <section className="panel send-confirmation-panel">
+
+          <div className="send-confirmation-content">
+
+            <div>
+              <h3>
+                Send Campaign?
+              </h3>
+
+              <p>
+                You are about to send this campaign
+                to{" "}
+                <strong>
+                  {counts.PENDING}
+                </strong>{" "}
+                pending recipient
+                {counts.PENDING === 1 ? "" : "s"}.
+              </p>
+
+              <p>
+                This action will eventually send real
+                emails through Gmail.
+              </p>
+
+              <p>
+                <strong>
+                  Real sending is currently disabled.
+                </strong>
+              </p>
+            </div>
+
+            <div className="detail-actions">
+
+              <button
+                className="action-button"
+                onClick={handleCancelSend}
+              >
+                Cancel
+              </button>
+
+              <button
+                className="primary-button"
+                onClick={handleConfirmSend}
+              >
+                Confirm
+              </button>
+
+            </div>
+
+          </div>
+
+        </section>
+      )}
+
+
       {/* Header */}
 
       <section className="panel">
@@ -227,15 +317,25 @@ function CampaignDetails({
           <div className="detail-actions">
 
             {isDraft && (
-              <button
-                className="primary-button"
-                onClick={handleDryRun}
-                disabled={dryRunning}
-              >
-                {dryRunning
-                  ? "Running..."
-                  : "Dry Run"}
-              </button>
+              <>
+                <button
+                  className="primary-button"
+                  onClick={handleDryRun}
+                  disabled={dryRunning}
+                >
+                  {dryRunning
+                    ? "Running..."
+                    : "Dry Run"}
+                </button>
+
+                <button
+                  className="primary-button"
+                  onClick={handleSendCampaign}
+                  disabled={counts.PENDING === 0}
+                >
+                  Send Campaign
+                </button>
+              </>
             )}
 
           </div>
@@ -421,9 +521,11 @@ function CampaignDetails({
                   <th>COMPANY</th>
                   <th>ROLE</th>
                   <th>STATUS</th>
+
                   {isDraft && (
                     <th>ACTIONS</th>
                   )}
+
                 </tr>
 
               </thead>
