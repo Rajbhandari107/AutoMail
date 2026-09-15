@@ -103,3 +103,34 @@ export function removeCampaignRecipient(
     }
   );
 }
+
+export async function uploadAttachment(file) {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const response = await fetch(
+    `${API_BASE_URL}/attachments`,
+    {
+      method: "POST",
+      body: formData,
+    }
+  );
+
+  if (!response.ok) {
+    let message = `Upload failed: ${response.status}`;
+
+    try {
+      const errorData = await response.json();
+
+      if (errorData.detail) {
+        message = errorData.detail;
+      }
+    } catch {
+      // Keep default error.
+    }
+
+    throw new Error(message);
+  }
+
+  return response.json();
+}

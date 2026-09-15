@@ -1,11 +1,21 @@
 import os
+import uuid
+from datetime import datetime
 
-from fastapi import FastAPI, APIRouter, HTTPException
+from fastapi import (
+    APIRouter,
+    FastAPI,
+    File,
+    HTTPException,
+    UploadFile,
+)
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from fastapi.middleware.cors import CORSMiddleware
-
-from app.database.db import get_connection, initialize_database
+from app.database.db import (
+    get_connection,
+    initialize_database,
+)
 from app.contacts.manager import Contact
 from app.contacts.repository import ContactRepository
 from app.campaigns.repository import CampaignRepository
@@ -13,10 +23,9 @@ from app.campaigns.manager import CampaignManager
 from app.campaigns.service import CampaignService
 
 
-
-# --------------------------------------------------
+# ==================================================
 # Application
-# --------------------------------------------------
+# ==================================================
 
 router = APIRouter()
 
@@ -25,8 +34,13 @@ initialize_database()
 app = FastAPI(
     title="AutoMail API",
     description="Backend API for AutoMail",
-    version="1.0.0"
+    version="1.0.0",
 )
+
+
+# ==================================================
+# CORS
+# ==================================================
 
 app.add_middleware(
     CORSMiddleware,
@@ -39,22 +53,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --------------------------------------------------
-# Repositories
-# --------------------------------------------------
 
-campaign_repository = CampaignRepository(
-    get_connection
-)
-
-contact_repository = ContactRepository(
-    get_connection
-)
-
-
-# --------------------------------------------------
+# ==================================================
 # Paths
-# --------------------------------------------------
+# ==================================================
 
 BASE_DIR = os.path.dirname(
     os.path.dirname(
@@ -64,17 +66,47 @@ BASE_DIR = os.path.dirname(
     )
 )
 
+ATTACHMENTS_DIR = os.path.join(
+    BASE_DIR,
+    "attachments",
+)
 
-# --------------------------------------------------
-# Request / Response Models
-# --------------------------------------------------
+TEMPLATES_DIR = os.path.join(
+    BASE_DIR,
+    "templates",
+)
 
+os.makedirs(ATTACHMENTS_DIR, exist_ok=True)
+
+
+# ==================================================
+# Attachment configuration
+# ==================================================
+
+MAX_ATTACHMENT_SIZE = 5 * 1024 * 1024
+
+ALLOWED_EXTENSIONS = {
+    ".pdf",
+    ".doc",
+    ".docx",
+}
+
+ALLOWED_CONTENT_TYPES = {
+    "application/pdf",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+}
+
+
+# ==================================================
+# Pydantic models
+# ==================================================
 
 class CampaignCreateRequest(BaseModel):
     name: str
     contact_ids: list[int]
     template: str = "internship.txt"
-    attachment_path: str | None = "attachments/Resume.pdf"
+    attachment_path: str | None = None
     delay_seconds: int = 2
 
 
@@ -159,12 +191,28 @@ class ContactResponse(BaseModel):
     created_at: str
 
 
-# --------------------------------------------------
-# Helpers
-# --------------------------------------------------
+# ==================================================
+# Repository helpers
+# ==================================================
 
+def get_contact_repository():
+    return ContactRepository(
+        get_connection
+    )
+
+
+def get_campaign_repository():
+    return CampaignRepository(
+        get_connection
+    )
+
+
+# ==================================================
+# Campaign manager
+# ==================================================
 
 def build_campaign_manager():
+    campaign_repository = get_campaign_repository()
 
     def email_sender(**kwargs):
         raise RuntimeError(
@@ -177,41 +225,208 @@ def build_campaign_manager():
         logger=None,
         contact_already_sent=(
             campaign_repository.was_contact_sent
-        )
+        ),
     )
 
     return CampaignManager(
         repository=campaign_repository,
-        campaign_service=service
+        campaign_service=service,
     )
 
 
-# --------------------------------------------------
-# Health
-# --------------------------------------------------
+# ==================================================
+# Attachment validation
+# ==================================================
 
+def validate_attachment_path(
+    attachment_path: str | None,
+):
+    """
+    Validate that an attachment path refers to a file
+    stored inside the AutoMail attachments directory.
+    """
+
+    if not attachment_path:
+        return None
+
+    normalized = attachment_path.replace(
+        "\\",
+        "/",
+    )
+
+    if not normalized.startswith(
+        "attachments/"
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Invalid attachment path. "
+                "Attachments must be stored "
+                "inside the attachments directory."
+            ),
+        )
+
+    filename = normalized[
+        len("attachments/"):
+    ]
+
+    if not filename or "/" in filename:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid attachment path.",
+        )
+
+    absolute_path = os.path.abspath(
+        os.path.join(
+            ATTACHMENTS_DIR,
+            filename,
+        )
+    )
+
+    attachments_root = os.path.abspath(
+        ATTACHMENTS_DIR
+    )
+
+    if not absolute_path.startswith(
+        attachments_root + os.sep
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid attachment path.",
+        )
+
+    if not os.path.isfile(
+        absolute_path
+    ):
+        raise HTTPException(
+            status_code=404,
+            detail="Attachment file not found.",
+        )
+
+    return normalized
+
+
+# ==================================================
+# Health
+# ==================================================
 
 @router.get("/health")
 def health_check():
 
     return {
         "status": "ok",
-        "service": "AutoMail"
+        "service": "AutoMail",
     }
 
 
-# --------------------------------------------------
-# Contacts
-# --------------------------------------------------
+# ==================================================
+# Attachment upload
+# ==================================================
 
+@router.post("/attachments")
+async def upload_attachment(
+    file: UploadFile = File(...),
+):
+
+    if not file.filename:
+        raise HTTPException(
+            status_code=400,
+            detail="No filename provided.",
+        )
+
+    original_filename = os.path.basename(
+        file.filename
+    )
+
+    extension = os.path.splitext(
+        original_filename
+    )[1].lower()
+
+    if extension not in ALLOWED_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Unsupported file type. "
+                "Only PDF, DOC, and DOCX files "
+                "are allowed."
+            ),
+        )
+
+    if (
+        file.content_type
+        and file.content_type
+        not in ALLOWED_CONTENT_TYPES
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid file content type.",
+        )
+
+    file_data = await file.read()
+
+    if len(file_data) > MAX_ATTACHMENT_SIZE:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "File is too large. "
+                "Maximum size is 5 MB."
+            ),
+        )
+
+    unique_filename = (
+        f"{uuid.uuid4().hex}{extension}"
+    )
+
+    destination_path = os.path.join(
+        ATTACHMENTS_DIR,
+        unique_filename,
+    )
+
+    try:
+        with open(
+            destination_path,
+            "wb",
+        ) as output_file:
+            output_file.write(file_data)
+
+    except OSError as error:
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                f"Could not save attachment: {error}"
+            ),
+        )
+
+    relative_path = os.path.join(
+        "attachments",
+        unique_filename,
+    ).replace("\\", "/")
+
+    return {
+        "filename": original_filename,
+        "stored_filename": unique_filename,
+        "path": relative_path,
+        "size": len(file_data),
+        "content_type": file.content_type,
+        "uploaded_at": datetime.now().isoformat(
+            timespec="seconds"
+        ),
+    }
+
+
+# ==================================================
+# Contacts
+# ==================================================
 
 @router.get(
     "/contacts",
-    response_model=list[ContactResponse]
+    response_model=list[ContactResponse],
 )
 def get_contacts():
 
-    contacts = contact_repository.get_all()
+    repository = get_contact_repository()
+
+    contacts = repository.get_all()
 
     return [
         ContactResponse(
@@ -223,21 +438,22 @@ def get_contacts():
 
 @router.get(
     "/contacts/{contact_id}",
-    response_model=ContactResponse
+    response_model=ContactResponse,
 )
 def get_contact(
-    contact_id: int
+    contact_id: int,
 ):
 
-    contact = contact_repository.get_by_id(
+    repository = get_contact_repository()
+
+    contact = repository.get_by_id(
         contact_id
     )
 
     if contact is None:
-
         raise HTTPException(
             status_code=404,
-            detail="Contact not found."
+            detail="Contact not found.",
         )
 
     return ContactResponse(
@@ -248,11 +464,13 @@ def get_contact(
 @router.post(
     "/contacts",
     response_model=ContactResponse,
-    status_code=201
+    status_code=201,
 )
 def create_contact(
-    request: ContactCreateRequest
+    request: ContactCreateRequest,
 ):
+
+    repository = get_contact_repository()
 
     name = request.name.strip()
     email = request.email.strip().lower()
@@ -260,48 +478,44 @@ def create_contact(
     role = request.role.strip()
 
     if not name or not email or not company or not role:
-
         raise HTTPException(
             status_code=400,
-            detail="All contact fields are required."
+            detail="All contact fields are required.",
         )
 
-    existing = contact_repository.get_by_email(
+    existing = repository.get_by_email(
         email
     )
 
     if existing:
-
         raise HTTPException(
             status_code=409,
             detail=(
                 "A contact with this email "
                 "already exists."
-            )
+            ),
         )
 
     contact = Contact(
         name=name,
         email=email,
         company=company,
-        role=role
+        role=role,
     )
 
     try:
-
-        contact_id = contact_repository.create(
+        contact_id = repository.create(
             contact
         )
 
     except Exception as error:
-
         raise HTTPException(
             status_code=400,
-            detail=str(error)
+            detail=str(error),
         )
 
     created_contact = (
-        contact_repository.get_by_id(
+        repository.get_by_id(
             contact_id
         )
     )
@@ -313,22 +527,23 @@ def create_contact(
 
 @router.put(
     "/contacts/{contact_id}",
-    response_model=ContactResponse
+    response_model=ContactResponse,
 )
 def update_contact(
     contact_id: int,
-    request: ContactUpdateRequest
+    request: ContactUpdateRequest,
 ):
 
-    existing = contact_repository.get_by_id(
+    repository = get_contact_repository()
+
+    existing = repository.get_by_id(
         contact_id
     )
 
     if existing is None:
-
         raise HTTPException(
             status_code=404,
-            detail="Contact not found."
+            detail="Contact not found.",
         )
 
     name = request.name.strip()
@@ -337,14 +552,13 @@ def update_contact(
     role = request.role.strip()
 
     if not name or not email or not company or not role:
-
         raise HTTPException(
             status_code=400,
-            detail="All contact fields are required."
+            detail="All contact fields are required.",
         )
 
     existing_email = (
-        contact_repository.get_by_email(
+        repository.get_by_email(
             email
         )
     )
@@ -353,38 +567,35 @@ def update_contact(
         existing_email
         and existing_email["id"] != contact_id
     ):
-
         raise HTTPException(
             status_code=409,
             detail=(
                 "A contact with this email "
                 "already exists."
-            )
+            ),
         )
 
     contact = Contact(
         name=name,
         email=email,
         company=company,
-        role=role
+        role=role,
     )
 
     try:
-
-        contact_repository.update(
+        repository.update(
             contact_id,
-            contact
+            contact,
         )
 
     except ValueError as error:
-
         raise HTTPException(
             status_code=404,
-            detail=str(error)
+            detail=str(error),
         )
 
     updated_contact = (
-        contact_repository.get_by_id(
+        repository.get_by_id(
             contact_id
         )
     )
@@ -398,112 +609,122 @@ def update_contact(
     "/contacts/{contact_id}"
 )
 def delete_contact(
-    contact_id: int
+    contact_id: int,
 ):
 
-    existing = contact_repository.get_by_id(
+    repository = get_contact_repository()
+
+    existing = repository.get_by_id(
         contact_id
     )
 
     if existing is None:
-
         raise HTTPException(
             status_code=404,
-            detail="Contact not found."
+            detail="Contact not found.",
         )
 
     try:
-
-        contact_repository.delete(
+        repository.delete(
             contact_id
         )
 
     except ValueError as error:
-
         raise HTTPException(
             status_code=404,
-            detail=str(error)
+            detail=str(error),
         )
 
     return {
-        "message": "Contact deleted successfully.",
-        "contact_id": contact_id
+        "message": (
+            "Contact deleted successfully."
+        ),
+        "contact_id": contact_id,
     }
 
 
-# --------------------------------------------------
-# Campaigns
-# --------------------------------------------------
-
+# ==================================================
+# Campaign creation
+# ==================================================
 
 @router.post(
     "/campaigns",
-    response_model=CampaignCreateResponse
+    response_model=CampaignCreateResponse,
 )
 def create_campaign(
-    request: CampaignCreateRequest
+    request: CampaignCreateRequest,
 ):
 
     name = request.name.strip()
 
     if not name:
-
         raise HTTPException(
             status_code=400,
-            detail="Campaign name cannot be empty."
+            detail="Campaign name cannot be empty.",
         )
 
     if not request.contact_ids:
-
         raise HTTPException(
             status_code=400,
             detail=(
                 "At least one contact "
                 "must be selected."
-            )
+            ),
         )
 
     if request.delay_seconds < 0:
-
         raise HTTPException(
             status_code=400,
-            detail="Delay cannot be negative."
+            detail="Delay cannot be negative.",
         )
 
-    # --------------------------------------------
+    # ----------------------------------------------
     # Validate template
-    # --------------------------------------------
+    # ----------------------------------------------
 
     template_name = os.path.basename(
         request.template
     )
 
     if template_name != request.template:
-
         raise HTTPException(
             status_code=400,
-            detail="Invalid template name."
+            detail="Invalid template name.",
         )
 
     template_path = os.path.join(
-        BASE_DIR,
-        "templates",
-        template_name
+        TEMPLATES_DIR,
+        template_name,
     )
 
-    if not os.path.isfile(template_path):
-
+    if not os.path.isfile(
+        template_path
+    ):
         raise HTTPException(
             status_code=404,
             detail=(
                 f"Template not found: "
                 f"{template_name}"
-            )
+            ),
         )
 
-    # --------------------------------------------
-    # Load selected contacts
-    # --------------------------------------------
+    # ----------------------------------------------
+    # Validate attachment
+    # ----------------------------------------------
+
+    attachment_path = (
+        validate_attachment_path(
+            request.attachment_path
+        )
+    )
+
+    # ----------------------------------------------
+    # Load contacts
+    # ----------------------------------------------
+
+    contact_repository = (
+        get_contact_repository()
+    )
 
     selected_contacts = []
 
@@ -514,13 +735,12 @@ def create_campaign(
         )
 
         if contact is None:
-
             raise HTTPException(
                 status_code=404,
                 detail=(
                     f"Contact #{contact_id} "
                     f"not found."
-                )
+                ),
             )
 
         selected_contacts.append(
@@ -528,13 +748,13 @@ def create_campaign(
                 name=contact["name"],
                 email=contact["email"],
                 company=contact["company"],
-                role=contact["role"]
+                role=contact["role"],
             )
         )
 
-    # --------------------------------------------
+    # ----------------------------------------------
     # Create campaign
-    # --------------------------------------------
+    # ----------------------------------------------
 
     manager = build_campaign_manager()
 
@@ -545,8 +765,8 @@ def create_campaign(
                 name=name,
                 contacts=selected_contacts,
                 template=template_name,
-                attachment_path=request.attachment_path,
-                delay_seconds=request.delay_seconds
+                attachment_path=attachment_path,
+                delay_seconds=request.delay_seconds,
             )
         )
 
@@ -554,24 +774,32 @@ def create_campaign(
 
         raise HTTPException(
             status_code=400,
-            detail=str(error)
+            detail=str(error),
         )
 
     return CampaignCreateResponse(
         campaign_id=campaign_id,
         name=name,
         status="DRAFT",
-        recipient_count=len(recipient_ids)
+        recipient_count=len(
+            recipient_ids
+        ),
     )
 
 
+# ==================================================
+# Campaign list
+# ==================================================
+
 @router.get(
     "/campaigns",
-    response_model=list[CampaignResponse]
+    response_model=list[CampaignResponse],
 )
 def get_campaigns():
 
-    campaigns = campaign_repository.get_all()
+    repository = get_campaign_repository()
+
+    campaigns = repository.get_all()
 
     return [
         CampaignResponse(
@@ -581,33 +809,40 @@ def get_campaigns():
     ]
 
 
+# ==================================================
+# Campaign details
+# ==================================================
+
 @router.get(
     "/campaigns/{campaign_id}",
-    response_model=CampaignDetailResponse
+    response_model=CampaignDetailResponse,
 )
 def get_campaign(
-    campaign_id: int
+    campaign_id: int,
 ):
 
-    campaign = campaign_repository.get_campaign(
+    repository = get_campaign_repository()
+
+    campaign = repository.get_campaign(
         campaign_id
     )
 
     if campaign is None:
-
         raise HTTPException(
             status_code=404,
-            detail="Campaign not found."
+            detail="Campaign not found.",
         )
 
     recipients = (
-        campaign_repository
-        .get_recipients(campaign_id)
+        repository.get_recipients(
+            campaign_id
+        )
     )
 
     counts = (
-        campaign_repository
-        .get_recipient_counts(campaign_id)
+        repository.get_recipient_counts(
+            campaign_id
+        )
     )
 
     return CampaignDetailResponse(
@@ -622,28 +857,29 @@ def get_campaign(
         ],
         counts=RecipientCountsResponse(
             **counts
-        )
+        ),
     )
 
 
-# --------------------------------------------------
-# Campaign Recipient Management
-# --------------------------------------------------
-
+# ==================================================
+# Campaign recipient management
+# ==================================================
 
 @router.delete(
     "/campaigns/{campaign_id}/recipients/{recipient_id}"
 )
 def remove_campaign_recipient(
     campaign_id: int,
-    recipient_id: int
+    recipient_id: int,
 ):
 
     try:
 
-        campaign_repository.remove_recipient(
+        repository = get_campaign_repository()
+
+        repository.remove_recipient(
             campaign_id,
-            recipient_id
+            recipient_id,
         )
 
     except ValueError as error:
@@ -651,15 +887,14 @@ def remove_campaign_recipient(
         message = str(error)
 
         if "does not exist" in message:
-
             raise HTTPException(
                 status_code=404,
-                detail=message
+                detail=message,
             )
 
         raise HTTPException(
             status_code=400,
-            detail=message
+            detail=message,
         )
 
     return {
@@ -667,54 +902,53 @@ def remove_campaign_recipient(
             "Recipient removed from campaign."
         ),
         "campaign_id": campaign_id,
-        "recipient_id": recipient_id
+        "recipient_id": recipient_id,
     }
 
 
-# --------------------------------------------------
-# Dry Run
-# --------------------------------------------------
-
+# ==================================================
+# Campaign dry run
+# ==================================================
 
 @router.post(
     "/campaigns/{campaign_id}/dry-run",
-    response_model=DryRunResponse
+    response_model=DryRunResponse,
 )
 def dry_run_campaign(
-    campaign_id: int
+    campaign_id: int,
 ):
 
-    campaign = campaign_repository.get_campaign(
+    repository = get_campaign_repository()
+
+    campaign = repository.get_campaign(
         campaign_id
     )
 
     if campaign is None:
-
         raise HTTPException(
             status_code=404,
-            detail="Campaign not found."
+            detail="Campaign not found.",
         )
 
     if campaign["status"] != "DRAFT":
-
         raise HTTPException(
             status_code=400,
             detail=(
                 f"Campaign #{campaign_id} is "
                 f"{campaign['status']}, not DRAFT."
-            )
+            ),
         )
 
     recipients = (
-        campaign_repository
-        .get_recipients(campaign_id)
+        repository.get_recipients(
+            campaign_id
+        )
     )
 
     if not recipients:
-
         raise HTTPException(
             status_code=400,
-            detail="Campaign has no recipients."
+            detail="Campaign has no recipients.",
         )
 
     manager = build_campaign_manager()
@@ -724,14 +958,14 @@ def dry_run_campaign(
         results = manager.start_campaign(
             campaign_id=campaign_id,
             dry_run=True,
-            delay_seconds=0
+            delay_seconds=0,
         )
 
     except ValueError as error:
 
         raise HTTPException(
             status_code=400,
-            detail=str(error)
+            detail=str(error),
         )
 
     return DryRunResponse(
@@ -740,21 +974,20 @@ def dry_run_campaign(
         results=[
             DryRunResult(
                 status=result["status"],
-                recipient=result["recipient"]
+                recipient=result["recipient"],
             )
             for result in results
         ],
         counts=RecipientCountsResponse(
-            **campaign_repository
-            .get_recipient_counts(
+            **repository.get_recipient_counts(
                 campaign_id
             )
-        )
+        ),
     )
 
 
-# --------------------------------------------------
-# Register router with FastAPI
-# --------------------------------------------------
+# ==================================================
+# Register router
+# ==================================================
 
 app.include_router(router)
