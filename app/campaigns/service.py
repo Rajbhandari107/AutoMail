@@ -14,6 +14,21 @@ class CampaignService:
         self.contact_already_sent = contact_already_sent
         self.status = "DRAFT"
 
+    def _log(
+        self,
+        recipient,
+        status,
+        message_id="",
+        error=""
+    ):
+        if self.logger:
+            self.logger.log(
+                recipient=recipient,
+                status=status,
+                message_id=message_id,
+                error=error
+            )
+
     def send_one(
         self,
         contact,
@@ -28,8 +43,10 @@ class CampaignService:
         contact_email = contact.email
         recipient = recipient_override or contact_email
 
-        # Do not resend a contact that has already
-        # successfully been sent in a previous campaign.
+        # ----------------------------------------
+        # Prevent duplicate sending
+        # ----------------------------------------
+
         if (
             self.contact_already_sent
             and self.contact_already_sent(contact_email)
@@ -49,7 +66,10 @@ class CampaignService:
                 "recipient": recipient
             }
 
-        # Safe testing mode.
+        # ----------------------------------------
+        # Dry run
+        # ----------------------------------------
+
         if dry_run:
             print(
                 f"[DRY RUN] Would send email to {recipient}"
@@ -60,7 +80,10 @@ class CampaignService:
                 "recipient": recipient
             }
 
-        # Real sending.
+        # ----------------------------------------
+        # Real sending
+        # ----------------------------------------
+
         print(
             f"Sending email to {recipient}"
         )
@@ -78,7 +101,7 @@ class CampaignService:
                 ""
             )
 
-            self.logger.log(
+            self._log(
                 recipient=recipient,
                 status="SENT",
                 message_id=message_id
@@ -103,7 +126,7 @@ class CampaignService:
 
         except Exception as error:
 
-            self.logger.log(
+            self._log(
                 recipient=recipient,
                 status="FAILED",
                 error=str(error)
@@ -147,7 +170,10 @@ class CampaignService:
     ):
         results = []
 
-        # A dry run does not change campaign state.
+        # ----------------------------------------
+        # Campaign start
+        # ----------------------------------------
+
         if dry_run:
             self.status = "DRY_RUN"
 
@@ -200,7 +226,7 @@ class CampaignService:
                         f"{contact.email}: {error}"
                     )
 
-                    self.logger.log(
+                    self._log(
                         recipient=contact.email,
                         status="FAILED",
                         error=str(error)
@@ -219,17 +245,40 @@ class CampaignService:
                         "error": str(error)
                     })
 
+                # ----------------------------------------
+                # Delay between recipients
+                # ----------------------------------------
+
                 if index < len(contacts) - 1:
                     time.sleep(
                         delay_seconds
                     )
 
+            # ----------------------------------------
+            # Determine final campaign status
+            # ----------------------------------------
+
             if not dry_run:
 
-                self.status = "COMPLETED"
+                failed_count = sum(
+                    1
+                    for result in results
+                    if result["status"] == "FAILED"
+                )
 
-                if campaign_id and mark_completed:
-                    mark_completed(campaign_id)
+                if failed_count > 0:
+
+                    self.status = "FAILED"
+
+                    if campaign_id and mark_failed:
+                        mark_failed(campaign_id)
+
+                else:
+
+                    self.status = "COMPLETED"
+
+                    if campaign_id and mark_completed:
+                        mark_completed(campaign_id)
 
             print(
                 f"\nCampaign status: {self.status}"
