@@ -1025,16 +1025,66 @@ def send_campaign(campaign_id: int):
         )
 
     # ----------------------------------------
-    # 7. Real sending is intentionally disabled
+    # 7. Authenticate Gmail BEFORE
+    #    changing campaign to RUNNING
     # ----------------------------------------
 
-    raise HTTPException(
-        status_code=501,
-        detail=(
-            "Campaign passed all safety checks, "
-            "but real email sending is not enabled yet."
-        ),
+    try:
+        manager = build_campaign_manager()
+
+    except Exception as error:
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                f"Gmail authentication failed: {error}"
+            ),
+        )
+
+    # ----------------------------------------
+    # 8. Send all pending recipients
+    # ----------------------------------------
+
+    pending_recipient_ids = [
+        recipient["id"]
+        for recipient in pending_recipients
+    ]
+
+    try:
+        results = manager.start_campaign(
+            campaign_id=campaign_id,
+            dry_run=False,
+            delay_seconds=campaign["delay_seconds"],
+            recipient_ids=pending_recipient_ids,
+        )
+
+    except ValueError as error:
+        raise HTTPException(
+            status_code=400,
+            detail=str(error),
+        )
+
+    except Exception as error:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Campaign send failed: {error}",
+        )
+
+    # ----------------------------------------
+    # 9. Return execution summary
+    # ----------------------------------------
+
+    counts = repository.get_recipient_counts(
+        campaign_id
     )
+
+    return {
+        "campaign_id": campaign_id,
+        "status": repository.get_campaign(
+            campaign_id
+        )["status"],
+        "results": results,
+        "counts": counts,
+    }
 
 
 
