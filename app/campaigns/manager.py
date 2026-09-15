@@ -125,7 +125,8 @@ class CampaignManager:
         attachment_path=None,
         recipient_override=None,
         dry_run=True,
-        delay_seconds=None
+        delay_seconds=None,
+        recipient_ids=None
     ):
         campaign = self.repository.get_campaign(
             campaign_id
@@ -146,6 +147,20 @@ class CampaignManager:
             raise ValueError(
                 f"Campaign #{campaign_id} has no recipients."
             )
+        
+        if recipient_ids is not None:
+            recipients = [
+                recipient
+                for recipient in recipients
+                if recipient["id"] in recipient_ids
+            ]
+
+            if not recipients:
+                raise ValueError(
+                    "None of the requested recipients "
+                    "belong to this campaign."
+                )
+
 
         template_renderer = (
             self._build_template_renderer(

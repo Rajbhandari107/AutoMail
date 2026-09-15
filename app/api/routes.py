@@ -2,6 +2,9 @@ import os
 import uuid
 from datetime import datetime
 
+from app.auth import get_gmail_credentials
+from app.email_sender import send_email
+
 from fastapi import (
     APIRouter,
     FastAPI,
@@ -21,6 +24,8 @@ from app.contacts.repository import ContactRepository
 from app.campaigns.repository import CampaignRepository
 from app.campaigns.manager import CampaignManager
 from app.campaigns.service import CampaignService
+
+
 
 
 # ==================================================
@@ -214,10 +219,12 @@ def get_campaign_repository():
 def build_campaign_manager():
     campaign_repository = get_campaign_repository()
 
+    credentials = get_gmail_credentials()
+
     def email_sender(**kwargs):
-        raise RuntimeError(
-            "Real email sending is not available "
-            "through this API yet."
+        return send_email(
+            credentials=credentials,
+            **kwargs,
         )
 
     service = CampaignService(
@@ -1028,6 +1035,180 @@ def send_campaign(campaign_id: int):
             "but real email sending is not enabled yet."
         ),
     )
+
+
+
+# ==================================================
+# Single-recipient test send
+# ==================================================
+
+@router.post(
+    "/campaigns/{campaign_id}/send-test/{recipient_id}"
+)
+def send_test_email(
+    campaign_id: int,
+    recipient_id: int,
+):
+    repository = get_campaign_repository()
+
+    campaign = repository.get_campaign(campaign_id)
+
+    if campaign is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Campaign not found."
+        )
+
+    if campaign["status"] != "DRAFT":
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Campaign #{campaign_id} cannot be "
+                f"test-sent because its status is "
+                f"{campaign['status']}."
+            ),
+        )
+
+    recipients = repository.get_recipients(
+        campaign_id
+    )
+
+    recipient = next(
+        (
+            item
+            for item in recipients
+            if item["id"] == recipient_id
+        ),
+        None,
+    )
+
+    if recipient is None:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"Recipient #{recipient_id} "
+                f"does not belong to campaign "
+                f"#{campaign_id}."
+            ),
+        )
+
+    if recipient["status"] != "PENDING":
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Recipient #{recipient_id} cannot "
+                f"be test-sent because its status is "
+                f"{recipient['status']}."
+            ),
+        )
+
+    template_name = campaign["template"]
+
+    if not template_name:
+        raise HTTPException(
+            status_code=400,
+            detail="Campaign does not have a template."
+        )
+
+    safe_template_name = os.path.basename(
+        template_name
+    )
+
+    if safe_template_name != template_name:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid template name."
+        )
+
+    template_path = os.path.join(
+        TEMPLATES_DIR,
+        safe_template_name
+    )
+
+    if not os.path.isfile(template_path):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Template not found: "
+                f"{safe_template_name}"
+            ),
+        )
+
+    attachment_path = campaign["attachment_path"]
+
+    if attachment_path:
+        validate_attachment_path(
+            attachment_path
+        )
+
+    manager = build_campaign_manager()
+
+    try:
+        results = manager.start_campaign(
+            campaign_id=campaign_id,
+            dry_run=False,
+            delay_seconds=0,
+            recipient_ids=[recipient_id],
+        )
+
+    except ValueError as error:
+        raise HTTPException(
+            status_code=400,
+            detail=str(error)
+        )
+
+    except Exception as error:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Test email failed: {error}"
+        )
+
+    result = results[0]
+
+    return {
+        "campaign_id": campaign_id,
+        "recipient_id": recipient_id,
+        "recipient": recipient["email"],
+        "status": result["status"],
+        "message_id": result.get("message_id"),
+    }
+
+
+@router.post("/campaigns/{campaign_id}/reset")
+def reset_campaign(campaign_id: int):
+    repository = get_campaign_repository()
+
+    campaign = repository.get_campaign(campaign_id)
+
+    if campaign is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Campaign not found."
+        )
+
+    if campaign["status"] != "RUNNING":
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Campaign #{campaign_id} cannot be reset "
+                f"because its status is "
+                f"{campaign['status']}."
+            ),
+        )
+
+    try:
+        repository.reset_to_draft(campaign_id)
+    except ValueError as error:
+        raise HTTPException(
+            status_code=400,
+            detail=str(error)
+        )
+
+    return {
+        "campaign_id": campaign_id,
+        "status": "DRAFT",
+        "message": "Campaign reset to DRAFT."
+    }
 def dry_run_campaign(
     campaign_id: int,
 ):

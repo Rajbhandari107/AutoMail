@@ -225,6 +225,44 @@ class CampaignRepository:
         connection.commit()
         connection.close()
 
+    def reset_to_draft(self, campaign_id):
+        connection = self.get_connection()
+        cursor = connection.cursor()
+
+        campaign = self.get_campaign(campaign_id)
+
+        if campaign is None:
+            connection.close()
+            raise ValueError(
+                f"Campaign #{campaign_id} does not exist."
+            )
+
+        if campaign["status"] != "RUNNING":
+            connection.close()
+            raise ValueError(
+                f"Campaign #{campaign_id} cannot be reset "
+                f"because its status is "
+                f"{campaign['status']}."
+            )
+
+        cursor.execute(
+            """
+            UPDATE campaigns
+            SET
+                status = ?,
+                started_at = NULL,
+                completed_at = NULL
+            WHERE id = ?
+            """,
+            (
+                "DRAFT",
+                campaign_id
+            )
+        )
+
+        connection.commit()
+        connection.close()    
+
     def update_recipient(
         self,
         recipient_id,
